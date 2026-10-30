@@ -207,7 +207,4 @@ reports/                Generated images, videos, summaries, and exports
 ## GitHub preparation
 
 `.gitignore` excludes the virtual environment, local SQLite databases, downloaded
-model weights, and generated reports. Keep credentials and personal video/image
-data out of source control. Before publishing, choose and add an appropriate
-license for this project's own source code and confirm that third-party software,
-model, and dataset terms are compatible with the intended distribution.
+model weights, and generated reports. 

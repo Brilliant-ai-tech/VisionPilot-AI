@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #17243b;
+      background: transparent;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0.25rem 0;
+    }
+
+    .recorder {
+      display: grid;
+      gap: 0.75rem;
+    }
+
+    video {
+      display: block;
+      width: 100%;
+      max-height: 360px;
+      aspect-ratio: 16 / 9;
+      border: 1px solid #dfe6ee;
+      border-radius: 0.75rem;
+      background: #101923;
+      object-fit: contain;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+    }
+
+    button {
+      flex: 1 1 10rem;
+      min-height: 2.75rem;
+      padding: 0.65rem 1rem;
+      border: 1px solid #147d78;
+      border-radius: 0.65rem;
+      background: #147d78;
+      color: white;
+      font: inherit;
+      font-weight: 650;
+      cursor: pointer;
+    }
+
+    button:hover:not(:disabled) {
+      border-color: #09645f;
+      background: #09645f;
+    }
+
+    button.secondary {
+      border-color: #cbd5e1;
+      background: white;
+      color: #26364d;
+    }
+
+    button:disabled {
+      opacity: 0.52;
+      cursor: not-allowed;
+    }
+
+    .status {
+      min-height: 1.4rem;
+      margin: 0;
+      color: #63718a;
+      font-size: 0.9rem;
+      line-height: 1.45;
+    }
+
+    .status.error {
+      color: #a12b35;
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    @media (max-width: 480px) {
+      video {
+        max-height: 240px;
+      }
+
+      button {
+        flex-basis: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="recorder">
+    <div class="controls">
+      <button id="start" type="button">Start camera</button>
+      <button id="record" type="button" disabled>Start recording</button>
+      <button id="stop" class="secondary" type="button" disabled>Stop recording</button>
+    </div>
+    <p id="status" class="status" role="status" aria-live="polite">
+      Camera access is requested only after you press Start camera.
+    </p>
+    <video id="preview" autoplay muted playsinline hidden></video>
+  </main>
+  <script>
+    const preview = document.getElementById("preview");
+    const startButton = document.getElementById("start");
+    const recordButton = document.getElementById("record");
+    const stopButton = document.getElementById("stop");
+    const status = document.getElementById("status");
+
+    let stream = null;
+    let recorder = null;
+    let chunks = [];
+    let maxBytes = 100 * 1024 * 1024;
+    let tooLarge = false;
+
+    function sendMessage(type, values = {}) {
+      window.parent.postMessage(
+        { isStreamlitMessage: true, type, ...values },
+        "*",
+      );
+    }
+
+    function setStatus(message, isError = false) {
+      status.textContent = message;
+      status.classList.toggle("error", isError);
+      setFrameHeight();
+    }
+
+    function setFrameHeight() {
+      const height = Math.max(
+        document.documentElement.scrollHeight,
+        document.body.scrollHeight,
+      );
+      sendMessage("streamlit:setFrameHeight", { height });
+    }
+
+    function sendRecording(value) {
+      sendMessage("streamlit:setComponentValue", {
+        value,
+        dataType: "json",
+      });
+    }
+
+    function stopCamera() {
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+        stream = null;
+      }
+    }
+
+    function supportedRecordingType() {
+      if (!window.MediaRecorder) {
+        return "";
+      }
+
+      return [
+        "video/webm;codecs=vp9",
+        "video/webm;codecs=vp8",
+        "video/webm",
+        "video/mp4",
+      ].find((type) => MediaRecorder.isTypeSupported(type)) || "";
+    }
+
+    startButton.addEventListener("click", async () => {
+      if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+        setStatus(
+          "Camera access requires HTTPS, or localhost on this computer.",
+          true,
+        );
+        return;
+      }
+
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" } },
+          audio: false,
+        });
+        preview.srcObject = stream;
+        await preview.play();
+        preview.hidden = false;
+        startButton.disabled = true;
+        recordButton.disabled = false;
+        setStatus("Camera ready. Press Start recording when you are ready.");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setStatus(`Could not access the camera: ${message}`, true);
+        stopCamera();
+      }
+    });
+
+    recordButton.addEventListener("click", () => {
+      const mimeType = supportedRecordingType();
+      if (!mimeType) {
+        setStatus("This browser does not support video recording.", true);
+        return;
+      }
+
+      chunks = [];
+      tooLarge = false;
+      try {
+        recorder = new MediaRecorder(stream, { mimeType });
+        recorder.addEventListener("dataavailable", (event) => {
+          if (event.data.size === 0 || tooLarge) {
+            return;
+          }
+          chunks.push(event.data);
+          const recordedBytes = chunks.reduce((total, chunk) => total + chunk.size, 0);
+          if (recordedBytes > maxBytes) {
+            tooLarge = true;
+            recorder.stop();
+          } else {
+            setStatus(
+              `Recording: ${(recordedBytes / (1024 * 1024)).toFixed(1)} MB of ` +
+                `${(maxBytes / (1024 * 1024)).toFixed(0)} MB maximum.`,
+            );
+          }
+        });
+        recorder.addEventListener("stop", async () => {
+          stopCamera();
+          preview.srcObject = null;
+          startButton.disabled = false;
+          recordButton.disabled = true;
+          stopButton.disabled = true;
+
+          if (tooLarge) {
+            chunks = [];
+            setStatus("Recording stopped because it exceeded the 100 MB limit.", true);
+            sendRecording({ error: "Recording exceeded the 100 MB limit." });
+            return;
+          }
+
+          const blob = new Blob(chunks, { type: mimeType });
+          chunks = [];
+          if (blob.size === 0) {
+            setStatus("No video was recorded. Try recording again.", true);
+            return;
+          }
+
+          const reader = new FileReader();
+          reader.addEventListener("load", () => {
+            const dataUrl = String(reader.result);
+            const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
+            const extension = mimeType.toLowerCase().includes("mp4") ? "mp4" : "webm";
+            setStatus(
+              `Recording ready (${(blob.size / (1024 * 1024)).toFixed(1)} MB). ` +
+                "You can now analyze it.",
+            );
+            sendRecording({ base64, extension });
+          });
+          reader.addEventListener("error", () => {
+            setStatus("Could not read the recorded video.", true);
+            sendRecording({ error: "Could not read the recorded video." });
+          });
+          reader.readAsDataURL(blob);
+        }, { once: true });
+
+        recorder.start(1000);
+        recordButton.disabled = true;
+        stopButton.disabled = false;
+        setStatus("Recording. Press Stop recording when you are done.");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setStatus(`Could not start recording: ${message}`, true);
+      }
+    });
+
+    stopButton.addEventListener("click", () => {
+      if (recorder && recorder.state !== "inactive") {
+        recorder.stop();
+      }
+    });
+
+    window.addEventListener("message", (event) => {
+      if (event.data?.type !== "streamlit:render") {
+        return;
+      }
+      const configuredMaxBytes = event.data.args?.max_bytes;
+      if (Number.isSafeInteger(configuredMaxBytes) && configuredMaxBytes > 0) {
+        maxBytes = configuredMaxBytes;
+      }
+    });
+
+    window.addEventListener("beforeunload", stopCamera);
+    new ResizeObserver(setFrameHeight).observe(document.body);
+    sendMessage("streamlit:componentReady", { apiVersion: 1 });
+    requestAnimationFrame(setFrameHeight);
+  </script>
+</body>
+</html>

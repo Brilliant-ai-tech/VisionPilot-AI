@@ -1,3 +1,5 @@
+import base64
+import binascii
 import logging
 import sqlite3
 import tempfile
@@ -7,6 +9,7 @@ from pathlib import Path
 import cv2
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 from src.detection import DEFAULT_IMAGE_SIZE, ObjectDetector
 from src.storage import AnalysisSession, SQLiteRepository
@@ -18,8 +21,13 @@ IMAGE_OUTPUT_DIR = PROJECT_ROOT / "reports" / "images"
 VIDEO_OUTPUT_DIR = PROJECT_ROOT / "reports" / "videos"
 MAX_IMAGE_BYTES = 25 * 1024 * 1024
 MAX_VIDEO_BYTES = 200 * 1024 * 1024
+MAX_BROWSER_RECORDING_BYTES = 100 * 1024 * 1024
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp"}
-VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv"}
+VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
+_browser_video_recorder = components.declare_component(
+    "visionpilot_browser_video_recorder",
+    path=str(Path(__file__).resolve().parent / "browser_recorder"),
+)
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 LOGGER = logging.getLogger(__name__)
@@ -31,17 +39,19 @@ def _apply_responsive_styles() -> None:
         <style>
         :root {
             color-scheme: light;
-            --vp-ink: #17243b;
-            --vp-muted: #63718a;
-            --vp-border: #e2e8f0;
-            --vp-accent: #147d78;
-            --vp-accent-dark: #09645f;
+            --vp-ink: #14243a;
+            --vp-muted: #64748b;
+            --vp-border: #e3eaf1;
+            --vp-accent: #087f75;
+            --vp-accent-dark: #06665f;
+            --vp-surface: #ffffff;
         }
 
         [data-testid="stAppViewContainer"] {
             background:
-                radial-gradient(ellipse at 12% 0%, #e8f5f2 0, transparent 34rem),
-                #f5f7fb;
+                radial-gradient(ellipse at 8% 0%, rgba(196, 232, 224, 0.46) 0, transparent 36rem),
+                linear-gradient(180deg, #f8fafc 0%, #f3f6fa 100%);
+            color: var(--vp-ink);
         }
 
         [data-testid="stHeader"] {
@@ -51,43 +61,76 @@ def _apply_responsive_styles() -> None:
         [data-testid="stMain"] > div {
             width: 100%;
             max-width: 1440px;
-            padding: 2rem clamp(1rem, 4vw, 3.5rem) 3rem;
+            padding: 1.5rem clamp(1rem, 4vw, 3.5rem) 3.5rem;
         }
 
         [data-testid="stSidebar"] {
             border-right: 1px solid var(--vp-border);
+            background: rgba(255, 255, 255, 0.88);
+            box-shadow: 8px 0 28px rgba(27, 45, 70, 0.025);
+        }
+
+        [data-testid="stSidebar"] h2 {
+            color: var(--vp-ink);
+            font-size: 1.05rem;
+            letter-spacing: -0.02em;
+        }
+
+        [data-testid="stSidebar"] [data-testid="stCaptionContainer"] {
+            color: var(--vp-muted);
         }
 
         .vp-hero {
             display: flex;
             align-items: center;
+            justify-content: space-between;
+            gap: 1.5rem;
+            margin: 0 0 1.35rem;
+            padding: clamp(1.3rem, 3vw, 2rem) clamp(1.3rem, 3vw, 2.2rem);
+            overflow: hidden;
+            border: 1px solid rgba(202, 224, 222, 0.9);
+            border-radius: 1.35rem;
+            background:
+                radial-gradient(circle at 88% 18%, rgba(8, 127, 117, 0.12), transparent 13rem),
+                linear-gradient(115deg, #ffffff 0%, #f1f8f7 100%);
+            box-shadow: 0 16px 42px rgba(25, 52, 73, 0.07);
+        }
+
+        .vp-brand {
+            display: flex;
+            align-items: center;
             gap: 1rem;
-            margin: 0 0 1.5rem;
-            padding: clamp(1.25rem, 3vw, 2rem);
-            border: 1px solid #d8e9e7;
-            border-radius: 1.25rem;
-            background: linear-gradient(115deg, #ffffff 0%, #f0f8f7 100%);
-            box-shadow: 0 12px 34px rgba(28, 54, 74, 0.06);
         }
 
         .vp-mark {
             display: grid;
-            flex: 0 0 3.25rem;
-            width: 3.25rem;
-            height: 3.25rem;
+            flex: 0 0 3.4rem;
+            width: 3.4rem;
+            height: 3.4rem;
             place-items: center;
-            border-radius: 1rem;
-            background: var(--vp-accent);
-            color: white;
-            font-size: 1.1rem;
+            border: 1px solid rgba(255, 255, 255, 0.24);
+            border-radius: 1.05rem;
+            background: linear-gradient(145deg, #11968a, #07665f);
+            color: #fff;
+            font-size: 1.05rem;
             font-weight: 800;
-            letter-spacing: -0.06em;
+            letter-spacing: -0.07em;
+            box-shadow: 0 8px 18px rgba(8, 127, 117, 0.24);
+        }
+
+        .vp-eyebrow {
+            margin: 0 0 0.3rem;
+            color: var(--vp-accent-dark);
+            font-size: 0.68rem;
+            font-weight: 800;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
         }
 
         .vp-hero h1 {
             margin: 0;
             color: var(--vp-ink);
-            font-size: clamp(1.65rem, 4vw, 2.45rem);
+            font-size: clamp(1.7rem, 4vw, 2.4rem);
             line-height: 1.12;
             letter-spacing: -0.045em;
         }
@@ -95,54 +138,192 @@ def _apply_responsive_styles() -> None:
         .vp-hero p {
             margin: 0.45rem 0 0;
             color: var(--vp-muted);
-            font-size: clamp(0.9rem, 1.5vw, 1rem);
+            font-size: clamp(0.9rem, 1.5vw, 0.98rem);
+            line-height: 1.55;
+        }
+
+        .vp-badge {
+            flex: 0 0 auto;
+            padding: 0.5rem 0.75rem;
+            border: 1px solid #d4e9e5;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.72);
+            color: #176d66;
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+        }
+
+        .vp-workspace-intro {
+            margin: 0.25rem 0 1.1rem;
+        }
+
+        .vp-workspace-intro h2 {
+            margin: 0;
+            color: var(--vp-ink);
+            font-size: clamp(1.2rem, 2.5vw, 1.45rem);
+            font-weight: 750;
+            letter-spacing: -0.035em;
+        }
+
+        .vp-workspace-intro p {
+            margin: 0.35rem 0 0;
+            color: var(--vp-muted);
+            font-size: 0.92rem;
             line-height: 1.55;
         }
 
         [data-testid="stTabs"] [role="tablist"] {
-            gap: 0.4rem;
-            border-bottom: 1px solid var(--vp-border);
+            gap: 0.35rem;
+            padding: 0.35rem;
+            border: 1px solid var(--vp-border);
+            border-radius: 0.9rem;
+            background: rgba(255, 255, 255, 0.74);
+            box-shadow: 0 3px 12px rgba(24, 42, 63, 0.025);
         }
 
         [data-testid="stTabs"] button[role="tab"] {
-            min-height: 2.8rem;
+            min-height: 2.55rem;
+            padding: 0.55rem 1rem;
+            border-radius: 0.65rem;
             color: var(--vp-muted);
+            font-size: 0.9rem;
             font-weight: 650;
+            transition: background 140ms ease, color 140ms ease;
         }
 
         [data-testid="stTabs"] button[aria-selected="true"] {
+            background: #e8f5f2;
             color: var(--vp-accent-dark);
+            box-shadow: inset 0 0 0 1px #d4ebe6;
+        }
+
+        [data-testid="stVerticalBlockBorderWrapper"] {
+            border-color: var(--vp-border) !important;
+            border-radius: 1rem !important;
+            background: var(--vp-surface);
+            box-shadow: 0 8px 24px rgba(30, 48, 69, 0.045);
+            transition: box-shadow 160ms ease, transform 160ms ease;
+        }
+
+        [data-testid="stVerticalBlockBorderWrapper"]:hover {
+            box-shadow: 0 12px 30px rgba(30, 48, 69, 0.075);
+        }
+
+        [data-testid="stVerticalBlockBorderWrapper"] h3 {
+            margin-bottom: 0.25rem;
+            color: var(--vp-ink);
+            font-size: 1.15rem;
+            letter-spacing: -0.025em;
+        }
+
+        [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stCaptionContainer"] {
+            color: var(--vp-muted);
+            line-height: 1.5;
         }
 
         [data-testid="stFileUploader"] {
             border: 1px dashed #c8d5e2;
-            border-radius: 0.9rem;
-            background: #fbfcfe;
+            border-radius: 0.8rem;
+            background: #f9fbfd;
+            transition: border-color 140ms ease, background 140ms ease;
+        }
+
+        [data-testid="stFileUploader"] [data-testid="stWidgetLabel"],
+        [data-testid="stFileUploader"] [data-testid="stWidgetLabel"] p {
+            color: var(--vp-ink) !important;
+        }
+
+        [data-testid="stFileUploaderDropzone"] {
+            border: 0 !important;
+            border-radius: 0.75rem !important;
+            background: #f9fbfd !important;
+            color: var(--vp-ink) !important;
+        }
+
+        [data-testid="stFileUploaderDropzone"] * {
+            color: var(--vp-ink) !important;
+        }
+
+        [data-testid="stFileUploaderDropzone"] button {
+            border: 1px solid #cbd9e5 !important;
+            border-radius: 0.6rem !important;
+            background: #ffffff !important;
+            color: var(--vp-accent-dark) !important;
+        }
+
+        [data-testid="stFileUploaderDropzone"] button svg {
+            fill: var(--vp-accent-dark) !important;
+        }
+
+        [data-testid="stFileUploader"]:hover {
+            border-color: #7fb9b1;
+            background: #f4faf8;
         }
 
         [data-testid="stMetric"] {
-            min-height: 6rem;
+            min-height: 6.2rem;
             padding: 1rem;
             border: 1px solid var(--vp-border);
-            border-radius: 0.9rem;
-            background: #fff;
+            border-radius: 0.85rem;
+            background: linear-gradient(145deg, #fff, #fbfcfe);
+            box-shadow: 0 4px 12px rgba(30, 48, 69, 0.025);
+        }
+
+        [data-testid="stMetricLabel"] {
+            color: var(--vp-muted);
+            font-size: 0.82rem;
+            font-weight: 600;
+        }
+
+        [data-testid="stMetricValue"] {
+            color: var(--vp-ink);
+            font-weight: 750;
+            letter-spacing: -0.04em;
         }
 
         .stButton > button,
         .stDownloadButton > button {
-            min-height: 2.7rem;
-            border-radius: 0.7rem;
-            font-weight: 650;
+            min-height: 2.75rem;
+            border-radius: 0.72rem;
+            font-weight: 700;
+            transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
         }
 
         .stButton > button[kind="primary"] {
             border-color: var(--vp-accent);
             background: var(--vp-accent);
+            box-shadow: 0 5px 12px rgba(8, 127, 117, 0.16);
         }
 
         .stButton > button[kind="primary"]:hover {
             border-color: var(--vp-accent-dark);
             background: var(--vp-accent-dark);
+            box-shadow: 0 7px 16px rgba(8, 127, 117, 0.23);
+            transform: translateY(-1px);
+        }
+
+        [data-testid="stRadio"] [role="radiogroup"] {
+            gap: 0.35rem;
+        }
+
+        [data-testid="stAlert"] {
+            border-radius: 0.8rem;
+        }
+
+        [data-testid="stDataFrame"] {
+            overflow: hidden;
+            border: 1px solid var(--vp-border);
+            border-radius: 0.8rem;
+        }
+
+        [data-testid="stExpander"] {
+            border-color: var(--vp-border);
+            border-radius: 0.8rem;
+        }
+
+        iframe[data-testid="stCustomComponentV1"] {
+            min-height: 430px !important;
         }
 
         [data-testid="stDataFrame"],
@@ -157,28 +338,40 @@ def _apply_responsive_styles() -> None:
 
             .vp-hero {
                 align-items: flex-start;
+                flex-direction: column;
                 gap: 0.8rem;
                 margin-bottom: 1rem;
-                padding: 1.1rem;
+                padding: 1rem;
                 border-radius: 1rem;
             }
 
+            .vp-brand {
+                gap: 0.75rem;
+            }
+
             .vp-mark {
-                flex-basis: 2.7rem;
-                width: 2.7rem;
-                height: 2.7rem;
+                flex-basis: 2.6rem;
+                width: 2.6rem;
+                height: 2.6rem;
                 border-radius: 0.8rem;
             }
 
+            .vp-badge {
+                align-self: flex-start;
+                margin-left: 3.35rem;
+            }
+
             [data-testid="stTabs"] [role="tablist"] {
-                gap: 0;
+                gap: 0.15rem;
                 justify-content: space-between;
+                padding: 0.25rem;
             }
 
             [data-testid="stTabs"] button[role="tab"] {
                 flex: 1 1 auto;
-                padding: 0.5rem 0.35rem;
-                font-size: 0.86rem;
+                min-height: 2.45rem;
+                padding: 0.45rem 0.25rem;
+                font-size: 0.82rem;
             }
 
             [data-testid="stHorizontalBlock"] {
@@ -201,7 +394,11 @@ def _apply_responsive_styles() -> None:
 
             [data-testid="stMetric"] {
                 min-height: 5.5rem;
-                padding: 0.8rem;
+                padding: 0.75rem;
+            }
+
+            iframe[data-testid="stCustomComponentV1"] {
+                min-height: 390px !important;
             }
 
             .stButton > button,
@@ -212,7 +409,7 @@ def _apply_responsive_styles() -> None:
 
         @media (max-width: 360px) {
             [data-testid="stTabs"] button[role="tab"] {
-                font-size: 0.78rem;
+                font-size: 0.74rem;
             }
 
             [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"])
@@ -364,12 +561,55 @@ def _analyze_video(
     repository: SQLiteRepository,
 ) -> None:
     name = getattr(uploaded_file, "name", "video")
+    _analyze_video_bytes(
+        name,
+        uploaded_file.getvalue(),
+        confidence,
+        frame_skip,
+        image_size,
+        repository,
+    )
+
+
+def _decode_browser_recording(recording: object) -> tuple[str, bytes]:
+    if not isinstance(recording, dict):
+        raise ValueError("The browser recorder did not return a valid recording.")
+    if recording.get("error"):
+        raise ValueError(str(recording["error"]))
+
+    encoded_video = recording.get("base64")
+    extension = recording.get("extension")
+    if not isinstance(encoded_video, str) or not isinstance(extension, str):
+        raise ValueError("The browser recorder returned incomplete video data.")
+
+    extension = extension.lower().lstrip(".")
+    if f".{extension}" not in VIDEO_EXTENSIONS:
+        raise ValueError(f"Unsupported browser recording format: {extension}.")
+    try:
+        video_bytes = base64.b64decode(encoded_video, validate=True)
+    except (binascii.Error, ValueError) as error:
+        raise ValueError("The browser recording data is invalid.") from error
+    if not video_bytes:
+        raise ValueError("The browser recording is empty.")
+    if len(video_bytes) > MAX_BROWSER_RECORDING_BYTES:
+        raise ValueError("Browser recordings must be 100 MB or smaller.")
+
+    return f"browser_recording.{extension}", video_bytes
+
+
+def _analyze_video_bytes(
+    name: str,
+    video_bytes: bytes,
+    confidence: float,
+    frame_skip: int,
+    image_size: int,
+    repository: SQLiteRepository,
+) -> None:
     extension = Path(name).suffix.lower()
-    size = getattr(uploaded_file, "size", 0)
     if extension not in VIDEO_EXTENSIONS:
-        st.error("Choose an MP4, AVI, MOV, or MKV video.")
+        st.error("Choose an MP4, AVI, MOV, MKV, or WEBM video.")
         return
-    if size > MAX_VIDEO_BYTES:
+    if len(video_bytes) > MAX_VIDEO_BYTES:
         st.error("Video exceeds the 200 MB upload limit.")
         return
 
@@ -379,7 +619,7 @@ def _analyze_video(
     summary_path = VIDEO_OUTPUT_DIR / f"{output_id}_summary.json"
     with tempfile.NamedTemporaryFile(suffix=extension, delete=False) as temporary:
         input_path = Path(temporary.name)
-        temporary.write(uploaded_file.getvalue())
+        temporary.write(video_bytes)
 
     try:
         processor = VideoProcessor(
@@ -427,11 +667,15 @@ def main() -> None:
     st.markdown(
         """
         <header class="vp-hero">
-            <div class="vp-mark" aria-hidden="true">VP</div>
-            <div>
-                <h1>VisionPilot AI</h1>
-                <p>Road-scene detection, object tracking, and experimental risk analysis.</p>
+            <div class="vp-brand">
+                <div class="vp-mark" aria-hidden="true">VP</div>
+                <div>
+                    <div class="vp-eyebrow">Computer vision workspace</div>
+                    <h1>VisionPilot AI</h1>
+                    <p>Road-scene detection, tracking, and motion-risk insights.</p>
+                </div>
             </div>
+            <div class="vp-badge">Research prototype</div>
         </header>
         """,
         unsafe_allow_html=True,
@@ -474,6 +718,15 @@ def main() -> None:
         ["Analyze media", "Session history", "About"]
     )
     with analyze_tab:
+        st.markdown(
+            """
+            <section class="vp-workspace-intro">
+                <h2>Start an analysis</h2>
+                <p>Choose an image for a quick scan, or use a video to track movement over time.</p>
+            </section>
+            """,
+            unsafe_allow_html=True,
+        )
         image_column, video_column = st.columns(2)
         with image_column:
             with st.container(border=True):
@@ -495,23 +748,69 @@ def main() -> None:
             with st.container(border=True):
                 st.subheader("Video tracking and risk analysis")
                 st.caption("Track moving objects and review estimated motion conflicts.")
-                video_file = st.file_uploader(
-                    "Choose a video",
-                    type=sorted(extension.lstrip(".") for extension in VIDEO_EXTENSIONS),
-                    key="video_upload",
+                video_source = st.radio(
+                    "Video source",
+                    ["Upload a video", "Record from camera"],
+                    horizontal=True,
+                    key="video_source",
                 )
-                if video_file is not None and st.button(
-                    "Process video",
-                    key="analyze_video",
-                    type="primary",
-                ):
-                    _analyze_video(
-                        video_file,
-                        confidence,
-                        frame_skip,
-                        image_size,
-                        repository,
+                if video_source == "Upload a video":
+                    video_file = st.file_uploader(
+                        "Choose a video",
+                        type=sorted(
+                            extension.lstrip(".")
+                            for extension in VIDEO_EXTENSIONS
+                        ),
+                        key="video_upload",
                     )
+                    if video_file is not None and st.button(
+                        "Process video",
+                        key="analyze_video",
+                        type="primary",
+                    ):
+                        _analyze_video(
+                            video_file,
+                            confidence,
+                            frame_skip,
+                            image_size,
+                            repository,
+                        )
+                else:
+                    st.caption(
+                        "Select Start camera below and allow camera access in your "
+                        "browser. Then choose Start recording. Processing runs on "
+                        "this computer."
+                    )
+                    recording = _browser_video_recorder(
+                        max_bytes=MAX_BROWSER_RECORDING_BYTES,
+                        key="browser_camera_recorder",
+                        default=None,
+                    )
+                    if recording is not None:
+                        try:
+                            recording_name, recording_bytes = (
+                                _decode_browser_recording(recording)
+                            )
+                        except ValueError as error:
+                            st.error(f"Camera recording failed: {error}")
+                        else:
+                            recording_format = (
+                                f"video/{Path(recording_name).suffix.lstrip('.')}"
+                            )
+                            st.video(recording_bytes, format=recording_format)
+                            if st.button(
+                                "Analyze recording",
+                                key="analyze_browser_recording",
+                                type="primary",
+                            ):
+                                _analyze_video_bytes(
+                                    recording_name,
+                                    recording_bytes,
+                                    confidence,
+                                    frame_skip,
+                                    image_size,
+                                    repository,
+                                )
 
     with history_tab:
         st.subheader("Saved analysis sessions")

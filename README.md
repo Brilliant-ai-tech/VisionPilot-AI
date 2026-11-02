@@ -16,6 +16,7 @@ dashboard.
 - Track IDs, center-point trajectories, and entry/exit events.
 - Heuristic pairwise risk assessments with explanations.
 - Annotated video output, frame skipping, and processing summaries.
+- Browser camera recording for short video clips, alongside video uploads.
 - Optional live webcam analysis. Press **Q while the camera window is focused**
   to stop capture.
 - SQLite persistence for video and camera sessions, detections, track events,
@@ -71,9 +72,10 @@ Run commands from the project root using the virtual-environment interpreter.
 .\.venv\Scripts\python.exe -m streamlit run dashboard/app.py
 ```
 
-The dashboard supports image detection, video tracking and risk analysis, saved
-session analytics, and CSV/JSON exports. Upload limits are 25 MB per image and
-200 MB per video. Video inference runs locally on the CPU and can take time.
+The dashboard supports image detection, uploaded or browser-recorded video
+tracking and risk analysis, saved session analytics, and CSV/JSON exports.
+Uploads are limited to 25 MB per image and 200 MB per video; browser recordings
+are limited to 100 MB. Video inference runs locally on the CPU and can take time.
 The interface adapts to mobile, tablet, and desktop browser sizes. Open the
 local URL printed by Streamlit (usually `http://localhost:8501`) in your browser.
 To open it from a phone or another device on the same Wi-Fi network, start the
@@ -85,7 +87,10 @@ server with:
 
 Then open `http://<computer-LAN-IP>:8501` on that device. Allow Python through
 Windows Firewall if prompted. Analysis still runs on the computer hosting the
-dashboard; this does not install a native mobile app.
+dashboard; this does not install a native mobile app. Camera recording requires
+browser camera permission and a secure context: use `localhost` on the computer
+running Streamlit, or serve the dashboard over HTTPS to record from another
+device. Plain HTTP over a LAN does not allow browser camera access.
 
 ### Detect objects in an image
 

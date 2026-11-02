@@ -78,6 +78,9 @@ Uploads are limited to 25 MB per image and 200 MB per video; browser recordings
 are limited to 100 MB. Video inference runs locally on the CPU and can take time.
 The interface adapts to mobile, tablet, and desktop browser sizes. Open the
 local URL printed by Streamlit (usually `http://localhost:8501`) in your browser.
+For Streamlit Community Cloud, select Python 3.11 under **Advanced settings**,
+matching the version used to test this project. The requirements file includes
+the PyTorch CPU wheel index needed to install the pinned `torch` build.
 To open it from a phone or another device on the same Wi-Fi network, start the
 server with:
 

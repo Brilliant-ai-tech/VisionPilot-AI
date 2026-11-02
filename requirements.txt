@@ -1,3 +1,4 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
 ultralytics==8.4.193
 torch==2.15.0+cpu
 lap==0.5.13

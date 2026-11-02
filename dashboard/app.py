@@ -25,6 +25,209 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 LOGGER = logging.getLogger(__name__)
 
 
+def _apply_responsive_styles() -> None:
+    st.markdown(
+        """
+        <style>
+        :root {
+            color-scheme: light;
+            --vp-ink: #17243b;
+            --vp-muted: #63718a;
+            --vp-border: #e2e8f0;
+            --vp-accent: #147d78;
+            --vp-accent-dark: #09645f;
+        }
+
+        [data-testid="stAppViewContainer"] {
+            background:
+                radial-gradient(ellipse at 12% 0%, #e8f5f2 0, transparent 34rem),
+                #f5f7fb;
+        }
+
+        [data-testid="stHeader"] {
+            background: transparent;
+        }
+
+        [data-testid="stMain"] > div {
+            width: 100%;
+            max-width: 1440px;
+            padding: 2rem clamp(1rem, 4vw, 3.5rem) 3rem;
+        }
+
+        [data-testid="stSidebar"] {
+            border-right: 1px solid var(--vp-border);
+        }
+
+        .vp-hero {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin: 0 0 1.5rem;
+            padding: clamp(1.25rem, 3vw, 2rem);
+            border: 1px solid #d8e9e7;
+            border-radius: 1.25rem;
+            background: linear-gradient(115deg, #ffffff 0%, #f0f8f7 100%);
+            box-shadow: 0 12px 34px rgba(28, 54, 74, 0.06);
+        }
+
+        .vp-mark {
+            display: grid;
+            flex: 0 0 3.25rem;
+            width: 3.25rem;
+            height: 3.25rem;
+            place-items: center;
+            border-radius: 1rem;
+            background: var(--vp-accent);
+            color: white;
+            font-size: 1.1rem;
+            font-weight: 800;
+            letter-spacing: -0.06em;
+        }
+
+        .vp-hero h1 {
+            margin: 0;
+            color: var(--vp-ink);
+            font-size: clamp(1.65rem, 4vw, 2.45rem);
+            line-height: 1.12;
+            letter-spacing: -0.045em;
+        }
+
+        .vp-hero p {
+            margin: 0.45rem 0 0;
+            color: var(--vp-muted);
+            font-size: clamp(0.9rem, 1.5vw, 1rem);
+            line-height: 1.55;
+        }
+
+        [data-testid="stTabs"] [role="tablist"] {
+            gap: 0.4rem;
+            border-bottom: 1px solid var(--vp-border);
+        }
+
+        [data-testid="stTabs"] button[role="tab"] {
+            min-height: 2.8rem;
+            color: var(--vp-muted);
+            font-weight: 650;
+        }
+
+        [data-testid="stTabs"] button[aria-selected="true"] {
+            color: var(--vp-accent-dark);
+        }
+
+        [data-testid="stFileUploader"] {
+            border: 1px dashed #c8d5e2;
+            border-radius: 0.9rem;
+            background: #fbfcfe;
+        }
+
+        [data-testid="stMetric"] {
+            min-height: 6rem;
+            padding: 1rem;
+            border: 1px solid var(--vp-border);
+            border-radius: 0.9rem;
+            background: #fff;
+        }
+
+        .stButton > button,
+        .stDownloadButton > button {
+            min-height: 2.7rem;
+            border-radius: 0.7rem;
+            font-weight: 650;
+        }
+
+        .stButton > button[kind="primary"] {
+            border-color: var(--vp-accent);
+            background: var(--vp-accent);
+        }
+
+        .stButton > button[kind="primary"]:hover {
+            border-color: var(--vp-accent-dark);
+            background: var(--vp-accent-dark);
+        }
+
+        [data-testid="stDataFrame"],
+        [data-testid="stTable"] {
+            max-width: 100%;
+        }
+
+        @media (max-width: 768px) {
+            [data-testid="stMain"] > div {
+                padding: 1rem 0.85rem 2rem;
+            }
+
+            .vp-hero {
+                align-items: flex-start;
+                gap: 0.8rem;
+                margin-bottom: 1rem;
+                padding: 1.1rem;
+                border-radius: 1rem;
+            }
+
+            .vp-mark {
+                flex-basis: 2.7rem;
+                width: 2.7rem;
+                height: 2.7rem;
+                border-radius: 0.8rem;
+            }
+
+            [data-testid="stTabs"] [role="tablist"] {
+                gap: 0;
+                justify-content: space-between;
+            }
+
+            [data-testid="stTabs"] button[role="tab"] {
+                flex: 1 1 auto;
+                padding: 0.5rem 0.35rem;
+                font-size: 0.86rem;
+            }
+
+            [data-testid="stHorizontalBlock"] {
+                flex-wrap: wrap !important;
+                gap: 0.75rem !important;
+            }
+
+            [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+                flex: 1 1 100% !important;
+                width: 100% !important;
+                min-width: 100% !important;
+            }
+
+            [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"])
+                > [data-testid="column"] {
+                flex: 1 1 calc(50% - 0.4rem) !important;
+                width: calc(50% - 0.4rem) !important;
+                min-width: calc(50% - 0.4rem) !important;
+            }
+
+            [data-testid="stMetric"] {
+                min-height: 5.5rem;
+                padding: 0.8rem;
+            }
+
+            .stButton > button,
+            .stDownloadButton > button {
+                width: 100%;
+            }
+        }
+
+        @media (max-width: 360px) {
+            [data-testid="stTabs"] button[role="tab"] {
+                font-size: 0.78rem;
+            }
+
+            [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"])
+                > [data-testid="column"] {
+                flex-basis: 100% !important;
+                width: 100% !important;
+                min-width: 100% !important;
+            }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def _session_label(session: AnalysisSession) -> str:
     return (
         f"{session.started_at[:19].replace('T', ' ')} | "
@@ -220,9 +423,18 @@ def main() -> None:
         page_icon="🚦",
         layout="wide",
     )
-    st.title("VisionPilot AI")
-    st.caption(
-        "CPU-based road-scene detection, tracking, and experimental risk analysis."
+    _apply_responsive_styles()
+    st.markdown(
+        """
+        <header class="vp-hero">
+            <div class="vp-mark" aria-hidden="true">VP</div>
+            <div>
+                <h1>VisionPilot AI</h1>
+                <p>Road-scene detection, object tracking, and experimental risk analysis.</p>
+            </div>
+        </header>
+        """,
+        unsafe_allow_html=True,
     )
 
     with st.sidebar:
@@ -264,38 +476,42 @@ def main() -> None:
     with analyze_tab:
         image_column, video_column = st.columns(2)
         with image_column:
-            st.subheader("Image detection")
-            image_file = st.file_uploader(
-                "Choose an image",
-                type=sorted(extension.lstrip(".") for extension in IMAGE_EXTENSIONS),
-                key="image_upload",
-            )
-            if image_file is not None and st.button(
-                "Analyze image",
-                key="analyze_image",
-                type="primary",
-            ):
-                _analyze_image(image_file, confidence, image_size)
+            with st.container(border=True):
+                st.subheader("Image detection")
+                st.caption("Upload a still image to detect and label road users.")
+                image_file = st.file_uploader(
+                    "Choose an image",
+                    type=sorted(extension.lstrip(".") for extension in IMAGE_EXTENSIONS),
+                    key="image_upload",
+                )
+                if image_file is not None and st.button(
+                    "Analyze image",
+                    key="analyze_image",
+                    type="primary",
+                ):
+                    _analyze_image(image_file, confidence, image_size)
 
         with video_column:
-            st.subheader("Video tracking and risk analysis")
-            video_file = st.file_uploader(
-                "Choose a video",
-                type=sorted(extension.lstrip(".") for extension in VIDEO_EXTENSIONS),
-                key="video_upload",
-            )
-            if video_file is not None and st.button(
-                "Process video",
-                key="analyze_video",
-                type="primary",
-            ):
-                _analyze_video(
-                    video_file,
-                    confidence,
-                    frame_skip,
-                    image_size,
-                    repository,
+            with st.container(border=True):
+                st.subheader("Video tracking and risk analysis")
+                st.caption("Track moving objects and review estimated motion conflicts.")
+                video_file = st.file_uploader(
+                    "Choose a video",
+                    type=sorted(extension.lstrip(".") for extension in VIDEO_EXTENSIONS),
+                    key="video_upload",
                 )
+                if video_file is not None and st.button(
+                    "Process video",
+                    key="analyze_video",
+                    type="primary",
+                ):
+                    _analyze_video(
+                        video_file,
+                        confidence,
+                        frame_skip,
+                        image_size,
+                        repository,
+                    )
 
     with history_tab:
         st.subheader("Saved analysis sessions")

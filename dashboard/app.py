@@ -727,6 +727,15 @@ def main() -> None:
             """,
             unsafe_allow_html=True,
         )
+        _, video_source_column = st.columns(2)
+        with video_source_column:
+            video_source = st.radio(
+                "Video source",
+                ["Upload a video", "Record from camera"],
+                horizontal=True,
+                key="video_source",
+            )
+
         image_column, video_column = st.columns(2)
         with image_column:
             with st.container(border=True):
@@ -748,12 +757,6 @@ def main() -> None:
             with st.container(border=True):
                 st.subheader("Video tracking and risk analysis")
                 st.caption("Track moving objects and review estimated motion conflicts.")
-                video_source = st.radio(
-                    "Video source",
-                    ["Upload a video", "Record from camera"],
-                    horizontal=True,
-                    key="video_source",
-                )
                 if video_source == "Upload a video":
                     video_file = st.file_uploader(
                         "Choose a video",
